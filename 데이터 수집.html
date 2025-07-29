@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>AM 빔포밍 송수신 시뮬레이터 with Heatmap</title>
+  <style>
+    body { margin:0; overflow:hidden; background:#000; color:#fff; font-family:sans-serif }
+    #ui {
+      position:absolute; top:10px; left:10px;
+      background:rgba(255,255,255,0.9); padding:8px; border-radius:4px; color:#000;
+      display:flex; gap:8px; align-items:center; z-index:10;
+    }
+    #ui button { padding:4px 8px }
+    #statusLabel { margin-left:10px; font-weight:bold }
+    #heatmapCanvas,#maxHeatmapCanvas {
+      position:absolute; right:10px; border:1px solid rgba(255,255,255,0.5);
+      background:#fff; image-rendering:pixelated; image-rendering:crisp-edges;
+    }
+    #heatmapCanvas { top:10px }
+    #maxHeatmapCanvas { top:320px }
+    #chart-container {
+      position:absolute; left:10px; right:10px; bottom:10px;
+      background:rgba(255,255,255,0.9); padding:12px; border-radius:4px; color:#000;
+      display:flex; gap:12px; z-index:9; overflow-x:auto;
+    }
+    .receiver-chart {
+      display:flex; flex-direction:column; align-items:flex-start; flex:none;
+    }
+    .receiver-chart canvas { height:100px!important; margin-bottom:4px }
+    .angle-label { font-weight:bold; margin-bottom:4px; color:#000 }
+    .receiver-chart pre {
+      display:block; width:100%; font-family:monospace; background:#fff; color:#000;
+      margin:2px 0; white-space:pre; overflow:visible; text-align:right;
+      padding:4px; box-sizing:border-box;
+    }
+    #accuracyTable { width:100%; border-collapse:collapse; font-size:14px }
+    #accuracyTable td {
+      border:1px solid #000; padding:4px 8px; text-align:center; background:#fff;
+    }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <button id="startBtn">Start</button>
+    <button id="stopBtn">Stop</button>
+    <button id="resetBtn">Reset</button>
+    <span id="statusLabel"></span>
+  </div>
+
+  <canvas id="heatmapCanvas"></canvas>
+  <canvas id="maxHeatmapCanvas"></canvas>
+  <div id="chart-container">
+    <div class="receiver-chart">
+      <canvas id="chartBeam"></canvas>
+      <div class="angle-label">@<span id="beamAngleLabel"></span>°</div>
+      <pre id="inBeam">Bits: </pre>
+      <pre id="outBeam">Received: </pre>
+      <pre id="accBeam">Accuracy: </pre>
+    </div>
+    <table id="accuracyTable">
+      <tbody>
+        <tr id="angleRow"></tr>
+        <tr id="accuracyRow"></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+  <script>
+    // ── 파라미터 ─────────────────────────────────────────────────────────
+    const beamAngleList   = [40];
+    const weightListSet   = [[1,2,2,1],[2,3,3,2]];
+    const calibrationBits = '111110';
+    const testBits        = '1011000101010111';
+    const bitSequence     = calibrationBits + testBits;
+    const bitCount        = bitSequence.length;
+    let beamAngleDeg      = 35;
+    let beamAngleRad      = beamAngleDeg * Math.PI/180;
+    const pxPerBit        = 10;
+    const totalWidth      = bitCount * pxPerBit;
+
+    const heatmapRes      = 50;
+    const heatmapDisplay  = 300;
+    const numAntennas     = 4;
+    const spacing         = 2;
+    const speed           = 1.5e9;
+    const v               = 3e10/speed;
+    const frequency       = 443e6/speed;
+    const carrierPeriod   = 1/frequency;
+    const halfPeriod      = carrierPeriod/2;
+    const phaseOffsetFrac = 0.25;
+    const resetPhasePerBit= true;
+    const bitDuration     = 1.16/1e9*speed;
+    const maxDistance     = 140;
+    const circleSegs      = 256;
+    const Rdistance       = 50;
+    const antennaWeights  = [1,2,2,1];
+    const fixedAngles     = Array.from({length:17},(_,i)=>-80 + i*10);
+    const tolerance       = 0.5;
+    const receiveThreshold= 4;
+
+    // ── 전역 변수 ─────────────────────────────────────────────────────────
+    const totalParts   = beamAngleList.length * weightListSet.length;
+    const totalBitsAll = bitCount * totalParts;
+    let doneParts      = 0;
+    let delays         = [];
+    let simTime        = 0, isRunning = false, initialized = false;
+    let bitEvents = [], waves = [], tick = 0, nextTime = 0;
+    let beamSphere;
+
+    // 헬퍼 함수
+    function polarPos(deg){
+      const rad=(90-deg)*Math.PI/180;
+      return { x:Math.cos(rad)*Rdistance, y:Math.sin(rad)*Rdistance };
+    }
+    function computeDelays(angleRad) {
+      const λ = v/frequency, k = 2*Math.PI/λ;
+      const raw = antennas.map(a=>{
+        const φ = -k*a.position.x*Math.sin(angleRad);
+        return -φ/(2*Math.PI*frequency);
+      });
+      const m = Math.min(...raw);
+      return raw.map(d=>d-m);
+    }
+
+    // DOM 초기화
+    document.getElementById('beamAngleLabel').innerText = beamAngleDeg;
+    document.getElementById('inBeam').innerText        = 'Bits: ' + bitSequence;
+    document.querySelectorAll('.receiver-chart canvas').forEach(c=>{
+      c.style.width  = totalWidth+'px';
+      c.width        = totalWidth;
+      c.style.height = '100px';
+      c.height       = 100;
+    });
+
+    // Three.js 세팅
+    const scene    = new THREE.Scene();
+    const camera   = new THREE.PerspectiveCamera(75,innerWidth/innerHeight,0.1,1000);
+    camera.position.set(0,0,100);
+    camera.lookAt(0,0,0);
+    const renderer = new THREE.WebGLRenderer({antialias:true});
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(innerWidth,innerHeight);
+    document.body.appendChild(renderer.domElement);
+    const controls = new THREE.OrbitControls(camera,renderer.domElement);
+    controls.enableDamping = true; controls.dampingFactor = 0.05;
+    const clock = new THREE.Clock();
+
+    // Heatmap 캔버스
+    const heatmapCanvas = document.getElementById('heatmapCanvas');
+    heatmapCanvas.width  = heatmapRes; heatmapCanvas.height = heatmapRes;
+    heatmapCanvas.style.width  = heatmapDisplay+'px';
+    heatmapCanvas.style.height = heatmapDisplay+'px';
+    const heatmapCtx = heatmapCanvas.getContext('2d');
+    const maxCanvas  = document.getElementById('maxHeatmapCanvas');
+    maxCanvas.width  = heatmapRes; maxCanvas.height = heatmapRes;
+    maxCanvas.style.width  = heatmapDisplay+'px';
+    maxCanvas.style.height = heatmapDisplay+'px';
+    const maxCtx     = maxCanvas.getContext('2d');
+
+    // 안테나 생성
+    const antennas = [];
+    const antGeom  = new THREE.CylinderGeometry(0.2,0.2,1,8);
+    const antMat   = new THREE.MeshBasicMaterial({color:0xffffff});
+    for(let i=0;i<numAntennas;i++){
+      const ant = new THREE.Mesh(antGeom,antMat);
+      ant.rotation.x = Math.PI/2;
+      ant.position.set((i-(numAntennas-1)/2)*spacing,0,0);
+      scene.add(ant); antennas.push(ant);
+      const src = new THREE.Mesh(
+        new THREE.SphereGeometry(0.5,16,16),
+        new THREE.MeshBasicMaterial({color:0xffff00})
+      );
+      src.position.copy(ant.position);
+      scene.add(src);
+    }
+    delays = computeDelays(beamAngleRad);
+
+    // 수신기 생성
+    const receivers = [];
+    fixedAngles.forEach(deg=>{
+      const {x,y}=polarPos(deg);
+      const sph = new THREE.Mesh(
+        new THREE.SphereGeometry(0.6,12,12),
+        new THREE.MeshBasicMaterial({color:0xff0000})
+      );
+      sph.position.set(x,y,0);
+      scene.add(sph);
+      receivers.push({
+        pos:new THREE.Vector3(x,y,0),
+        received:Array(bitCount).fill(false),
+        strength:Array(bitCount).fill(0),
+        output:Array(bitCount).fill('0')
+      });
+    });
+    { // 파랑 빔 수신기
+      const {x,y}=polarPos(beamAngleDeg);
+      beamSphere = new THREE.Mesh(
+        new THREE.SphereGeometry(0.6,12,12),
+        new THREE.MeshBasicMaterial({color:0x0000ff})
+      );
+      beamSphere.position.set(x,y,0);
+      beamSphere.renderOrder = 1;
+      scene.add(beamSphere);
+      receivers.unshift({
+        pos:new THREE.Vector3(x,y,0),
+        received:Array(bitCount).fill(false),
+        strength:Array(bitCount).fill(0),
+        output:Array(bitCount).fill('0')
+      });
+    }
+
+    // Chart.js 설정
+    const chartBeam = new Chart(
+      document.getElementById('chartBeam').getContext('2d'), {
+        type:'line',
+        data:{
+          labels:Array(bitCount).fill().map((_,i)=>String(i)),
+          datasets:[{
+            label:`@${beamAngleDeg}°`,
+            data:Array(bitCount).fill(0),
+            borderColor:'#00f', fill:false, stepped:true, pointRadius:3
+          }]
+        },
+        options:{
+          scales:{
+            x:{ title:{ display:true, text:'Bit Index' } },
+            y:{ min:0, max:1, ticks:{ stepSize:1 } }
+          },
+          plugins:{ legend:{ display:false } }
+        }
+      }
+    );
+
+    // 수신 감지 + UI 업데이트
+    function detectReceivers(){
+      receivers.forEach(r=> r.hitCount=Array(bitCount).fill(0));
+      waves.forEach(ring=> receivers.forEach(rec=>{
+        const R = v*(simTime-ring.userData.t0);
+        const d = rec.pos.distanceTo(ring.position);
+        if(Math.abs(d-R)<tolerance) rec.hitCount[ring.userData.idx]++;
+      }));
+      receivers.forEach(rec=> rec.hitCount.forEach((c,i)=>{
+        if(c>=receiveThreshold && rec.output[i]==='0') rec.output[i]='1';
+      }));
+
+      const blue = receivers[0];
+      const data = blue.output.map(b=>b==='1'?1:0);
+      chartBeam.data.datasets[0].data=data; chartBeam.update();
+      document.getElementById('outBeam').innerText = 'Received: '+blue.output.join('');
+      document.getElementById('accBeam').innerText = 'Accuracy: '+
+        (blue.output.filter((b,i)=>b===bitSequence[i]).length/bitCount*100).toFixed(1)+'%';
+
+      const ar=document.getElementById('angleRow');
+      const cr=document.getElementById('accuracyRow');
+      ar.innerHTML=''; cr.innerHTML='';
+      fixedAngles.forEach((deg,i)=>{
+        const tdA=document.createElement('td');
+        tdA.innerText=deg+'°'; ar.appendChild(tdA);
+        const rec=receivers[i+1];
+        const match=rec.output.filter((b,j)=>b===bitSequence[j]).length;
+        const tdB=document.createElement('td');
+        tdB.innerText=(match/bitCount*100).toFixed(1)+'%'; cr.appendChild(tdB);
+      });
+    }
+
+    // Heatmap 그리기
+    function signedColor(v,vmax){
+      const a=Math.min(Math.abs(v)/vmax,1);
+      return v>=0
+        ? [255,Math.round(255*(1-a)),Math.round(255*(1-a))]
+        : [Math.round(255*(1-a)),Math.round(255*(1-a)),255];
+    }
+    function maxColor(v,vmax){
+      const a=Math.min(Math.abs(v)/vmax,1);
+      return [255,Math.round(255*(1-a)),Math.round(255*(1-a))];
+    }
+    let maxAbs    = Array.from({length:heatmapRes},()=>Array(heatmapRes).fill(0));
+    let maxSigned = Array.from({length:heatmapRes},()=>Array(heatmapRes).fill(0));
+
+    function drawHeatmap(){
+      const size=heatmapRes;
+      const img = heatmapCtx.createImageData(size,size);
+      const img2= maxCtx.createImageData(size,size);
+      const half=60, cell=(half*2)/size, vmax=8;
+      for(let i=0;i<size;i++){
+        for(let j=0;j<size;j++){
+          const x=-half+(i+0.5)*cell, y=(j+0.5)*cell;
+          let sum=0;
+          waves.forEach(ring=>{
+            const R=v*(simTime-ring.userData.t0);
+            const d=Math.hypot(x-ring.position.x,y-ring.position.y);
+            if(Math.abs(d-R)<0.1) sum+=ring.userData.weight*ring.userData.sign;
+          });
+          const absS=Math.abs(sum);
+          maxAbs[i][j]=Math.max(maxAbs[i][j],absS);
+          if(absS>Math.abs(maxSigned[i][j])) maxSigned[i][j]=sum;           
+          const row=size-1-j, idx=4*(row*size+i);
+          const [r,g,b]  = signedColor(sum,vmax);
+          const [r2,g2,b2]=maxColor(maxSigned[i][j],vmax);
+          img.data[idx]=r;   img.data[idx+1]=g;   img.data[idx+2]=b;   img.data[idx+3]=255;
+          img2.data[idx]=r2; img2.data[idx+1]=g2; img2.data[idx+2]=b2; img2.data[idx+3]=255;
+        }
+      }
+      heatmapCtx.putImageData(img,0,0);
+      maxCtx.putImageData(img2,0,0);
+    }
+
+    // 파동 생성
+    function spawnWave(ant, idx, antIdx, sign){
+      const pts=[];
+      for(let i=0;i<circleSegs;i++){
+        const t=i/circleSegs*2*Math.PI;
+        pts.push(new THREE.Vector3(Math.cos(t),Math.sin(t),0));
+      }
+      const geom=new THREE.BufferGeometry().setFromPoints(pts);
+      const mat=new THREE.LineBasicMaterial({
+        color:sign>0?0xff0000:0x0088ff,
+        transparent:true, opacity:0.8
+      });
+      const loop=new THREE.LineLoop(geom,mat);
+      loop.position.copy(ant.position);
+      loop.userData={ t0:simTime, idx, weight:antennaWeights[antIdx], sign };
+      scene.add(loop); waves.push(loop);
+    }
+
+    // 시뮬레이션 제어
+    function initSim(){
+      simTime=0; bitEvents=[]; waves=[]; tick=0; nextTime=0; initialized=true;
+      maxAbs    = Array.from({length:heatmapRes},()=>Array(heatmapRes).fill(0));
+      maxSigned = Array.from({length:heatmapRes},()=>Array(heatmapRes).fill(0));
+      receivers.forEach(r=>{ r.received.fill(false); r.output.fill('0'); });
+      chartBeam.data.datasets[0].data.fill(0); chartBeam.update();
+      document.getElementById('outBeam').innerText='Received:'+ '0'.repeat(bitCount);
+      document.getElementById('accBeam').innerText='Accuracy: 0%';
+    }
+    function startSim(){ if(!initialized) initSim(); isRunning=true; }
+    function stop(){ isRunning=false; }
+    function reset(){
+      isRunning=false; initialized=false;
+      waves.forEach(w=>scene.remove(w));
+      initSim();
+    }
+
+    // 애니메이션 루프
+    function animate(){
+      requestAnimationFrame(animate);
+      controls.update();
+      const dt=clock.getDelta();
+      if(isRunning) simTime+=dt;
+
+      // 비트 이벤트 생성 & 전체 진행률 업데이트
+      while(simTime>=nextTime && tick<bitCount){
+        bitEvents.push({
+          time: nextTime,
+          bit:  bitSequence[tick],
+          idx:  tick,
+          nextEmit:    Array(numAntennas).fill(nextTime),
+          phaseSign:   Array(numAntennas).fill(1),
+          emittedCount:Array(numAntennas).fill(0)
+        });
+        nextTime+=bitDuration;
+        tick++;
+
+        // 전체 비트 기준 진행률 (소수점 한 자리)
+        const executedBits = doneParts*bitCount + tick;
+        const pct = (executedBits/totalBitsAll*100).toFixed(1);
+        document.getElementById('statusLabel').innerText = `실행중… ${pct}%`;
+      }
+
+      // 파동 방출
+      bitEvents.forEach(ev=>{
+        if(ev.bit!=='1') return;
+        antennas.forEach((ant,j)=>{
+          const startT=ev.time+delays[j];
+          const endT  =ev.time+bitDuration+delays[j];
+          if(resetPhasePerBit&&ev.emittedCount[j]===0){
+            ev.nextEmit[j]=startT+phaseOffsetFrac*carrierPeriod;
+            ev.phaseSign[j]=1;
+          } else if(ev.nextEmit[j]<startT){
+            ev.nextEmit[j]=startT;
+          }
+          while(isRunning&&ev.nextEmit[j]<=endT&&ev.nextEmit[j]<=simTime){
+            spawnWave(ant,ev.idx,j,ev.phaseSign[j]);
+            ev.phaseSign[j]*=-1;
+            ev.nextEmit[j]+=halfPeriod;
+            ev.emittedCount[j]++;
+          }
+        });
+      });
+
+      // 완료된 이벤트 제거
+      bitEvents = bitEvents.filter(ev=>{
+        if(ev.bit!=='1') return false;
+        const endT=ev.time+bitDuration+Math.max(...delays);
+        return ev.nextEmit.some(t=>t<=endT);
+      });
+
+      detectReceivers();
+      drawHeatmap();
+
+      // 오래된 파동 제거
+      waves = waves.filter(w=>{
+        const R=v*(simTime-w.userData.t0);
+        w.scale.set(R,R,1);
+        if(R>maxDistance){ scene.remove(w); return false; }
+        return true;
+      });
+
+      renderer.render(scene,camera);
+    }
+
+    // 배치 실행
+    async function runBatchSimulation(){
+      doneParts = 0;
+      const results = [];
+
+      for(const angle of beamAngleList){
+        for(const weights of weightListSet){
+          beamAngleDeg = angle;
+          beamAngleRad = angle*Math.PI/180;
+          antennaWeights.splice(0,antennaWeights.length,...weights);
+          document.getElementById('beamAngleLabel').innerText = beamAngleDeg;
+          delays = computeDelays(beamAngleRad);
+          const {x,y} = polarPos(beamAngleDeg);
+          beamSphere.position.set(x,y,0);
+          receivers[0].pos.set(x,y,0);
+          chartBeam.data.datasets[0].label = `@${beamAngleDeg}°`;
+          chartBeam.update();
+
+          reset();
+          await new Promise(r=>setTimeout(r,100));
+          startSim();
+
+          await new Promise(resolve=>{
+            const chk = setInterval(()=>{
+              if(tick>=bitCount && waves.length===0){
+                stop(); detectReceivers(); clearInterval(chk);
+                // 결과 수집
+                const heatmap2D = maxAbs.map(row=>[...row]);
+                const accList = fixedAngles.map((_,i)=>{
+                  const rec=receivers[i+1];
+                  const match=rec.output.filter((b,j)=>b===bitSequence[j]).length;
+                  return parseFloat((match/bitCount*100).toFixed(1));
+                });
+                results.push({
+                  angle,
+                  weights: JSON.stringify(weights),
+                  maxIntensity: heatmap2D,
+                  accuracy: [accList]
+                });
+                doneParts++;
+                resolve();
+              }
+            },50);
+          });
+        }
+      }
+
+      // (1) 헤더
+      const csvLines = [
+        'Angle,Weights,MaxIntensity,Accuracy'
+      ];
+
+      // (2) 결과 배열(results)을 순회하며
+      results.forEach(r => {
+        // JSON 문자열
+        const wStr = JSON.stringify(r.weights);
+        const miStr = JSON.stringify(r.maxIntensity);
+        const acStr = JSON.stringify(r.accuracy);
+
+        // 큰따옴표 내부의 큰따옴표는 "" 로 이스케이프
+        const wEsc = wStr.replace(/"/g, '""');
+        const miEsc = miStr.replace(/"/g, '""');
+        const acEsc = acStr.replace(/"/g, '""');
+
+        // 네 개 칼럼을 콤마로 연결
+        csvLines.push(
+          `${r.angle},"${wEsc}","${miEsc}","${acEsc}"`
+        );
+      });
+
+      // (3) 파일로 만들기
+      const blob = new Blob([csvLines.join('\n')], { type: 'text/csv' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = 'beamforming_results.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+
+      document.getElementById('statusLabel').innerText = '완료';
+    }
+
+    // 바인딩 & 시작
+    document.getElementById('startBtn').onclick = runBatchSimulation;
+    document.getElementById('stopBtn').onclick  = stop;
+    document.getElementById('resetBtn').onclick = reset;
+    window.addEventListener('resize',()=>{
+      camera.aspect = innerWidth/innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth,innerHeight);
+    });
+
+    animate();
+  </script>
+</body>
+</html>
