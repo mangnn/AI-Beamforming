@@ -23,79 +23,48 @@
       gap: 8px;
       z-index: 10;
     }
-    #ui button {
-      padding: 4px 8px;
-    }
+    #ui button { padding: 4px 8px; }
     #heatmapCanvas,
     #maxHeatmapCanvas {
       position: absolute;
       right: 10px;
-      border: 1px solid rgba(255, 255, 255, 0.5);
-      background-color: #fff;
+      border: 1px solid rgba(255,255,255,0.5);
+      background: #fff;
       image-rendering: pixelated;
       image-rendering: crisp-edges;
     }
     #heatmapCanvas { top: 10px; }
     #maxHeatmapCanvas { top: 320px; }
-
-    /* 차트 + 테이블 컨테이너 */
     #chart-container {
       position: absolute;
-      left: 10px;
-      right: 10px;
-      bottom: 10px;
+      left: 10px; right: 10px; bottom: 10px;
       background: rgba(255,255,255,0.9);
-      padding: 12px;
-      border-radius: 4px;
-      color: #000;
-      display: flex;
-      flex-direction: row;
-      gap: 12px;
-      z-index: 9;
-      overflow-x: auto;
+      padding: 12px; border-radius: 4px;
+      color: #000; display: flex; gap: 12px;
+      overflow-x: auto; z-index: 9;
     }
-
     .receiver-chart {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
+      display: flex; flex-direction: column; align-items: flex-start;
       flex: none;
     }
     .receiver-chart canvas {
-      height: 100px !important;
-      margin-bottom: 4px;
+      height: 100px !important; margin-bottom: 4px;
     }
     .angle-label {
-      font-weight: bold;
-      margin-bottom: 4px;
-      color: #000;
+      font-weight: bold; margin-bottom: 4px; color: #000;
     }
-    /* Bits/Received 오른쪽 정렬 */
     .receiver-chart pre {
-      display: block;
-      width: 100%;
-      font-family: monospace;
-      background: #fff;
-      color: #000;
-      margin: 2px 0;
-      white-space: pre;
-      overflow: visible;
-      text-align: right;
-      padding: 4px;
-      box-sizing: border-box;
+      display: block; width: 100%; font-family: monospace;
+      background: #fff; color: #000; margin: 2px 0;
+      white-space: pre; overflow: visible; text-align: right;
+      padding: 4px; box-sizing: border-box;
     }
-
-    /* 테이블 스타일 */
     #accuracyTable {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 14px;
+      width: 100%; border-collapse: collapse; font-size: 14px;
     }
     #accuracyTable td {
-      border: 1px solid #000;
-      padding: 4px 8px;
-      text-align: center;
-      background: #fff;
+      border: 1px solid #000; padding: 4px 8px;
+      text-align: center; background: #fff;
     }
   </style>
 </head>
@@ -105,10 +74,8 @@
     <button id="stopBtn">Stop</button>
     <button id="resetBtn">Reset</button>
   </div>
-
   <canvas id="heatmapCanvas"></canvas>
   <canvas id="maxHeatmapCanvas"></canvas>
-
   <div id="chart-container">
     <div class="receiver-chart">
       <canvas id="chartBeam"></canvas>
@@ -129,37 +96,47 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
   <script>
-    // 시뮬레이션 파라미터
-    const calibrationBits  = '111110';
-    const testBits         = '1011000101010111';
-    const bitSequence      = calibrationBits + testBits;
-    const bitCount         = bitSequence.length;
-    const beamAngleDeg     = 35;
-    const pxPerBit         = 10;
-    const totalWidth       = bitCount * pxPerBit;
+    // 기본 파라미터
+    const calibrationBits = '111110';
+    const testBits        = '1011000101010111';
+    const bitSequence     = calibrationBits + testBits;
+    const bitCount        = bitSequence.length;
+    const beamAngleDeg    = 20;
+    const pxPerBit        = 10;
+    const totalWidth      = bitCount * pxPerBit;
 
-    const heatmapRes       = 200;
-    const heatmapDisplay   = 300;
-    const numAntennas      = 4;
-    const spacing          = 2;
-    const speed            = 1.5e9;
-    const v                = 3e10 / speed;
-    const frequency        = 443e6 / speed;
-    const carrierPeriod    = 1 / frequency;
-    const halfPeriod       = carrierPeriod / 2;
-    const phaseOffsetFrac  = 0.25;
-    const resetPhasePerBit = true;
-    const bitDuration      = 1.16 / 1e9 * speed;
-    const maxDistance      = 140;
-    const circleSegs       = 256;
-    const beamAngleRad     = beamAngleDeg * Math.PI / 180;
-    const Rdistance        = 50;
-    const antennaWeights   = [1, 2, 2, 1];
-    const fixedAngles      = Array.from({length:17},(_,i)=>-80 + i*10);
-    const tolerance        = 0.5;
-    const receiveThreshold = 4;
+    const heatmapRes     = 100;
+    const heatmapDisplay = 300;
+    const numAntennas    = 4;
+    const spacing        = 2;
+    const speed          = 3e9;
+    const v              = 3e10 / speed;
+    const frequency      = 2.4e9 / speed;
+    const carrierPeriod  = 1 / frequency;
+    const bitDuration    = 1.16 / 1e9 * speed;
+    const maxDistance    = 140;
+    const circleSegs     = 256;
+    const beamAngleRad   = beamAngleDeg * Math.PI / 180;
+    const Rdistance      = 50;
+    const antennaWeights = [1,2,2,1];
+    const fixedAngles    = Array.from({length:17},(_,i)=>-80 + i*10);
+    const tolerance      = 0.5;
+    const receiveThreshold = 4.5;
 
-    // DOM 초기화
+    // 6단계 위상 시퀀스 (맨 뒤가 중복되지 않도록)
+    const phaseSeq = [
+      { amp: 0.5, sign:  1 },  // 연한 빨강
+      { amp: 1,   sign:  1 },  // 빨강
+      { amp: 0.5, sign:  1 },  // 연한 빨강
+      { amp: 0.5, sign: -1 },  // 연한 파랑
+      { amp: 1,   sign: -1 },  // 파랑
+      { amp: 0.5, sign: -1 }   // 연한 파랑
+    ];
+
+    // 링 생성 간격: carrierPeriod를 6등분
+    const stepPeriod = carrierPeriod / phaseSeq.length;
+
+    // DOM 세팅
     document.getElementById('beamAngleLabel').innerText = beamAngleDeg;
     document.getElementById('inBeam').innerText = 'Bits: ' + bitSequence;
     document.querySelectorAll('.receiver-chart canvas').forEach(c => {
@@ -176,9 +153,9 @@
     camera.lookAt(0,0,0);
     const renderer = new THREE.WebGLRenderer({antialias:true});
     renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setSize(innerWidth, innerHeight);
+    renderer.setSize(innerWidth,innerHeight);
     document.body.appendChild(renderer.domElement);
-    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    const controls = new THREE.OrbitControls(camera,renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
     const clock = new THREE.Clock();
@@ -211,7 +188,7 @@
     const antGeom  = new THREE.CylinderGeometry(0.2,0.2,1,8);
     const antMat   = new THREE.MeshBasicMaterial({color:0xffffff});
     for(let i=0;i<numAntennas;i++){
-      const ant = new THREE.Mesh(antGeom, antMat);
+      const ant = new THREE.Mesh(antGeom,antMat);
       ant.rotation.x = Math.PI/2;
       ant.position.set((i-(numAntennas-1)/2)*spacing,0,0);
       scene.add(ant);
@@ -229,7 +206,7 @@
       return { x: Math.cos(rad)*Rdistance, y: Math.sin(rad)*Rdistance };
     }
 
-    // 지연 시간 계산
+    // 지연 계산
     const delays = (() => {
       const λ = v / frequency;
       const k = 2 * Math.PI / λ;
@@ -241,7 +218,7 @@
       return raw.map(d => d - m);
     })();
 
-    // 수신기 생성 (빨강 fixed 17개 + 파랑 beam 1개)
+    // 수신기 생성
     const receivers = [];
     fixedAngles.forEach(deg => {
       const {x,y} = polarPos(deg);
@@ -253,12 +230,11 @@
       scene.add(sph);
       receivers.push({
         pos: new THREE.Vector3(x,y,0),
-        received: Array(bitCount).fill(false),
-        strength: Array(bitCount).fill(0),
+        hitCount: Array(bitCount).fill(0),
         output:   Array(bitCount).fill('0')
       });
     });
-    { // 파랑 beam
+    {
       const {x,y} = polarPos(beamAngleDeg);
       const sph = new THREE.Mesh(
         new THREE.SphereGeometry(0.6,12,12),
@@ -268,10 +244,9 @@
       sph.renderOrder = 1;
       scene.add(sph);
       receivers.unshift({
-        pos: new THREE.Vector3(x,y,0),
-        received: Array(bitCount).fill(false),
-        strength: Array(bitCount).fill(0),
-        output:   Array(bitCount).fill('0')
+        pos:       new THREE.Vector3(x,y,0),
+        hitCount:  Array(bitCount).fill(0),
+        output:    Array(bitCount).fill('0')
       });
     }
 
@@ -282,7 +257,6 @@
         data: {
           labels: Array(bitCount).fill().map((_,i)=>String(i)),
           datasets: [{
-            label: `@${beamAngleDeg}°`,
             data: Array(bitCount).fill(0),
             borderColor: '#00f',
             fill: false,
@@ -292,7 +266,7 @@
         },
         options: {
           scales: {
-            x: { title: { display: true, text: 'Bit Index' } },
+            x: { title: { display:true, text:'Bit Index' } },
             y: { min:0, max:1, ticks:{ stepSize:1 } }
           },
           plugins:{ legend:{ display:false } }
@@ -300,28 +274,30 @@
       }
     );
 
-    // 수신 감지 + UI 업데이트
-    function detectReceivers() {
-      receivers.forEach(r=> r.hitCount = Array(bitCount).fill(0));
-      waves.forEach(ring => receivers.forEach(rec => {
-        const R = v * (simTime - ring.userData.t0);
+    // 수신 감지
+    function detectReceivers(){
+      receivers.forEach(r=> r.hitCount.fill(0));
+      waves.forEach(ring=> receivers.forEach(rec=>{
+        const R = v*(simTime-ring.userData.t0);
         const d = rec.pos.distanceTo(ring.position);
-        if(Math.abs(d-R) < tolerance) rec.hitCount[ring.userData.idx]++;
+        if(Math.abs(d-R) < tolerance){
+          rec.hitCount[ring.userData.idx] += ring.userData.weight;
+        }
       }));
-      receivers.forEach(rec => rec.hitCount.forEach((c,i)=>{
-        if(c>=receiveThreshold && rec.output[i]==='0') rec.output[i]='1';
-      }));
+      // Beam 업데이트
+      const blue = receivers[0];
+      blue.output.forEach((_,i)=>{
+        if(blue.hitCount[i] >= receiveThreshold) blue.output[i] = '1';
+      });
 
-      // 파랑 beam 차트 & 텍스트
-      const blueRec = receivers[0];
-      const blueData = blueRec.output.map(b=>b==='1'?1:0);
-      chartBeam.data.datasets[0].data = blueData;
+      chartBeam.data.datasets[0].data = blue.output.map(b=>b==='1'?1:0);
       chartBeam.update();
-      document.getElementById('outBeam').innerText = 'Received: ' + blueRec.output.join('');
-      document.getElementById('accBeam').innerText = 'Accuracy: ' +
-        (blueRec.output.filter((b,i)=>b===bitSequence[i]).length/bitCount*100).toFixed(1) + '%';
+      document.getElementById('outBeam').innerText =
+        'Received: ' + blue.output.join('');
+      document.getElementById('accBeam').innerText =
+        'Accuracy: ' + (blue.output.filter((b,i)=>b===bitSequence[i]).length/bitCount*100).toFixed(1) + '%';
 
-      // 테이블 업데이트 (1행: 각도, 2행: 정확도)
+      // Red 수신기 테이블
       const angleRow    = document.getElementById('angleRow');
       const accuracyRow = document.getElementById('accuracyRow');
       angleRow.innerHTML = '';
@@ -330,8 +306,10 @@
         const tdA = document.createElement('td');
         tdA.innerText = deg + '°';
         angleRow.appendChild(tdA);
-
         const rec = receivers[i+1];
+        rec.output.forEach((_,j)=>{
+          if(rec.hitCount[j] >= receiveThreshold) rec.output[j] = '1';
+        });
         const match = rec.output.filter((b,j)=>b===bitSequence[j]).length;
         const tdB = document.createElement('td');
         tdB.innerText = (match/bitCount*100).toFixed(1) + '%';
@@ -339,7 +317,7 @@
       });
     }
 
-    // heatmap 그리기
+    // Heatmap (unchanged)
     function signedColor(v,vmax){
       const a = Math.min(Math.abs(v)/vmax,1);
       return v>=0
@@ -352,7 +330,6 @@
     }
     let maxAbs    = Array.from({length:heatmapRes},()=>Array(heatmapRes).fill(0));
     let maxSigned = Array.from({length:heatmapRes},()=>Array(heatmapRes).fill(0));
-
     function drawHeatmap(){
       const size = heatmapRes;
       const img  = heatmapCtx.createImageData(size,size);
@@ -366,14 +343,14 @@
           waves.forEach(ring=>{
             const R = v*(simTime-ring.userData.t0);
             const d = Math.hypot(x-ring.position.x, y-ring.position.y);
-            if(Math.abs(d-R)<0.1) sum += ring.userData.weight*ring.userData.sign;
+            if(Math.abs(d-R)<0.1) sum += ring.userData.weight * (ring.userData.sign||1);
           });
           const absS = Math.abs(sum);
-          maxAbs[i][j] = Math.max(maxAbs[i][j], absS);
-          if(absS > Math.abs(maxSigned[i][j])) maxSigned[i][j]=sum;
+          maxAbs[i][j]    = Math.max(maxAbs[i][j], absS);
+          if(absS > Math.abs(maxSigned[i][j])) maxSigned[i][j] = sum;
           const row = size-1-j, idx = 4*(row*size+i);
-          const [r,g,b]   = signedColor(sum, vmax);
-          const [r2,g2,b2]= maxColor(maxSigned[i][j], vmax);
+          const [r,g,b]    = signedColor(sum, vmax);
+          const [r2,g2,b2] = maxColor(maxSigned[i][j], vmax);
           img.data[idx]=r; img.data[idx+1]=g; img.data[idx+2]=b; img.data[idx+3]=255;
           img2.data[idx]=r2;img2.data[idx+1]=g2;img2.data[idx+2]=b2;img2.data[idx+3]=255;
         }
@@ -382,24 +359,39 @@
       maxCtx.putImageData(img2, 0,0);
     }
 
-    // 시뮬레이션 초기화
+    // 파동 생성: amp에 따라 색/opacity 조정
+    function spawnWave(ant, idx, antIdx, sign, amp){
+      const color = amp===1
+        ? (sign>0 ? 0xff0000 : 0x0088ff)
+        : (sign>0 ? 0xffcccc : 0xccccff);
+      const opacity = amp===1 ? 1 : 0.5;
+      const pts = [];
+      for(let i=0;i<circleSegs;i++){
+        const t = i/circleSegs*2*Math.PI;
+        pts.push(new THREE.Vector3(Math.cos(t), Math.sin(t),0));
+      }
+      const geom = new THREE.BufferGeometry().setFromPoints(pts);
+      const mat  = new THREE.LineBasicMaterial({color, transparent:true, opacity});
+      const loop = new THREE.LineLoop(geom, mat);
+      loop.position.copy(ant.position);
+      loop.userData = { t0: simTime, idx, weight: antennaWeights[antIdx]*amp, sign };
+      scene.add(loop);
+      waves.push(loop);
+    }
+
+    // 초기화
     function initSim(){
       simTime=0; bitEvents=[]; waves=[]; tick=0; nextTime=0; initialized=true;
       maxAbs    = Array.from({length:heatmapRes},()=>Array(heatmapRes).fill(0));
       maxSigned = Array.from({length:heatmapRes},()=>Array(heatmapRes).fill(0));
-      receivers.forEach(r=>{ r.received.fill(false); r.output.fill('0'); });
+      receivers.forEach(r=>{
+        r.hitCount.fill(0);
+        r.output.fill('0');
+      });
       chartBeam.data.datasets[0].data.fill(0);
       chartBeam.update();
-      document.getElementById('outBeam').innerText = 'Received:' + '0'.repeat(bitCount);
+      document.getElementById('outBeam').innerText = 'Received:'+'0'.repeat(bitCount);
       document.getElementById('accBeam').innerText = 'Accuracy: 0%';
-    }
-    function start() { if(!initialized) initSim(); isRunning=true; }
-    function stop()  { isRunning=false; }
-    function reset() {
-      isRunning=false;
-      initialized=false;
-      waves.forEach(w=>scene.remove(w));
-      initSim();
     }
 
     // 애니메이션 루프
@@ -413,41 +405,35 @@
       while(simTime >= nextTime && tick < bitCount){
         bitEvents.push({
           time: nextTime,
-          bit: bitSequence[tick],
-          idx: tick,
-          nextEmit: Array(numAntennas).fill(nextTime),
-          phaseSign: Array(numAntennas).fill(1),
-          emittedCount: Array(numAntennas).fill(0)
+          bit:  bitSequence[tick],
+          idx:  tick,
+          nextEmit: delays.map(d=> nextTime + d),
+          phaseIndex: Array(numAntennas).fill(0)
         });
         nextTime += bitDuration;
         tick++;
       }
 
-      // 파동 방출
+      // 파동 방출 (7-단계 시퀀스)
       bitEvents.forEach(ev=>{
         if(ev.bit !== '1') return;
         antennas.forEach((ant,j)=>{
           const startT = ev.time + delays[j];
           const endT   = ev.time + bitDuration + delays[j];
-          if(resetPhasePerBit && ev.emittedCount[j]===0){
-            ev.nextEmit[j] = startT + phaseOffsetFrac*carrierPeriod;
-            ev.phaseSign[j] = 1;
-          } else if(ev.nextEmit[j] < startT){
-            ev.nextEmit[j] = startT;
-          }
           while(isRunning && ev.nextEmit[j] <= endT && ev.nextEmit[j] <= simTime){
-            spawnWave(ant, ev.idx, j, ev.phaseSign[j]);
-            ev.phaseSign[j] *= -1;
-            ev.nextEmit[j] += halfPeriod;
-            ev.emittedCount[j]++;
+            const { amp, sign } = phaseSeq[ev.phaseIndex[j]];
+            spawnWave(ant, ev.idx, j, sign, amp);
+            ev.nextEmit[j]   += stepPeriod;
+            ev.phaseIndex[j] = (ev.phaseIndex[j] + 1) % phaseSeq.length;
           }
         });
       });
-      // 완료된 이벤트 제거
+
+      // 이벤트 제거
       bitEvents = bitEvents.filter(ev=>{
         if(ev.bit !== '1') return false;
         const endT = ev.time + bitDuration + Math.max(...delays);
-        return ev.nextEmit.some(t=>t <= endT);
+        return ev.nextEmit.some(t=> t <= endT );
       });
 
       detectReceivers();
@@ -455,7 +441,7 @@
 
       // 오래된 파동 제거
       waves = waves.filter(w=>{
-        const R = v * (simTime - w.userData.t0);
+        const R = v*(simTime - w.userData.t0);
         w.scale.set(R,R,1);
         if(R > maxDistance){
           scene.remove(w);
@@ -467,34 +453,22 @@
       renderer.render(scene, camera);
     }
 
-    // 파동 생성 함수
-    function spawnWave(ant, idx, antIdx, sign){
-      const pts = [];
-      for(let i=0;i<circleSegs;i++){
-        const t = i/circleSegs*2*Math.PI;
-        pts.push(new THREE.Vector3(Math.cos(t),Math.sin(t),0));
-      }
-      const geom = new THREE.BufferGeometry().setFromPoints(pts);
-      const mat  = new THREE.LineBasicMaterial({
-        color: sign>0?0xff0000:0x0088ff,
-        transparent: true,
-        opacity: 0.8
-      });
-      const loop = new THREE.LineLoop(geom, mat);
-      loop.position.copy(ant.position);
-      loop.userData = { t0: simTime, idx, weight: antennaWeights[antIdx], sign };
-      scene.add(loop);
-      waves.push(loop);
-    }
-
-    // 이벤트 바인딩 & 루프 시작
-    document.getElementById('startBtn').onclick = start;
-    document.getElementById('stopBtn').onclick  = stop;
-    document.getElementById('resetBtn').onclick = reset;
+    // 버튼 바인딩
+    document.getElementById('startBtn').onclick = ()=>{
+      if(!initialized) initSim();
+      isRunning = true;
+    };
+    document.getElementById('stopBtn').onclick = ()=> isRunning = false;
+    document.getElementById('resetBtn').onclick = ()=>{
+      isRunning = false;
+      initialized = false;
+      waves.forEach(w=> scene.remove(w));
+      initSim();
+    };
     window.addEventListener('resize', ()=>{
       camera.aspect = innerWidth/innerHeight;
       camera.updateProjectionMatrix();
-      renderer.setSize(innerWidth, innerHeight);
+      renderer.setSize(innerWidth,innerHeight);
     });
 
     animate();
